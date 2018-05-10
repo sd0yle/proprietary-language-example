@@ -1,0 +1,1210 @@
+! s1 - Piglet Pet Sack
+! Works with piglet pets (s2)
+!
+! Created by Steph
+! Modification History:
+!
+!
+!-----------------
+! Varfield Usage:
+! Owner - Owner of pet
+! data1 - Tier unlock
+! data2 - Trick slots allowed
+! data3 - Trick slots used
+! data4 - Tricks learned (1-5) where each new one is appended.
+! data5 - Current trick being trained (1-5)
+! data6 - Current trick training.  (0-10)
+! data7 - Number of items being worn. (0-3)
+! data8 - Number of items being carried. (0-1)
+! data9 - Timestamp of last RUB.  (1wk cooldown)
+! data10 - Idle timer
+! StrData1 - Custom Trick word
+! StrData2 - Custom Trick MSGP
+! StrData3 - Custom Trick MSGRXP
+! data14 - Timestamp for last-seen owner
+! data15 - Timestamp matching my bag
+!----------------------------------------------------------------------------------------------
+! Area to handle random interaction, movement, eating, etc.
+! Breakdown of effect V2's
+!     V2 = 0, Heartbeat effect. Follow owner, find opponents, Room 11, take care of illegal locations
+!     V2 = 1, Random ambients when in a container or on the ground
+!----------------------------------------------------------------------------------------------
+if (NO1 & (NO1:script <> $THISSCRIPT)) then
+  stop
+.
+when v0
+  is 12328000
+    if (NR0:silenced & (V2 <> 0)) then ! Let's try again later, movement is allowed
+      addeffect code $THISSCRIPT value1 V1 value2 V2 flags 0 with NO1 in 60 script $THISSCRIPT
+      stop
+    .
+    if (V2 = 0) then  ! Movement.
+      where NO1 for NP0
+      if (NP0:access > 3) then            ! Let GM's hold the pet
+        stop
+      .
+      ifnot NO1:owner then                ! I have no owner
+        stop                              ! Stop, do nothing with no owner
+      .
+      clear NO1:hidden                    ! Unhide me, why am I hidden anyway?! I should never be hidden
+      index NO1:owner for NP1             ! Find my owner
+      where NO1 for NR1                   ! Where am I?
+      ifnot NP1 then                      ! Oh noes! My owner doesn't exist!
+        ifnot (NR1 = 11) then             ! I'm not in the familiar holding room
+          set NR1 to 11                   ! Find the familiar holding room
+          if NR1 then                     ! The holding room exists! Hallelujah!
+            move NO1 ground NR1           ! Move me there
+            msgr "$+$O1D trots off in search of its owner."
+            set NO1:data14 to $TIME
+          .
+        else ! I'm already here, in the familiar holding area
+          clear NO1:lockseg ! Take off my lockseg.
+        .  
+        if (($TIME - NO1:data14) > 7776000) then ! Move than 90 days w/out owner.
+          callmatch must_match "$BLDMSG" in 1764 ! Find cstring.
+          set A9 to NO1 ! Get exist number
+          vtos NO1:owner for S8
+          getnameof NO1:owner
+          set V9 to $THISSCRIPT
+          set T1 to "[Piglet Pet (s$:$THISSCRIPT)]"
+          expand T1                                             
+          set T2 to "The owner, $S0, of $O1D ($A9) has not been seen in 90 days.  Deleting now."
+          expand T2
+          log start "ALTERATION"
+          log target_index S8
+          log text "$T1 $T2.  Cstring:$R$T5$T6$T7$T8$T9"
+          log submit "system"
+          ! Add logging for any items worn or held.
+          killallnp NO1
+          stop
+        .
+        addeffect code $THISSCRIPT value1 V1 value2 0 flags 0 with NO1 in 60 script $THISSCRIPT ! I still live!
+        stop
+      else ! My owner exists.
+        addeffect code $THISSCRIPT value1 0 value2 0 flags 0 with NO1 in 10 script $THISSCRIPT ! restart my move effect
+        set NO1:lockseg to 1                                        ! Don't let segment unloading eat me
+        set NO1:data14 to $TIME                                     ! Update the last-seen owner field
+      .
+      where NO1 for NO2
+      where NO1 for NE2
+      where NO1 for NC2
+      if NE2 then
+        set NO2 to NE2
+      else_if NC2 then 
+        set NO2 to NC2
+      .
+      where NO1 for NP0                                             ! Am I on a person?
+      if NP0 then                                                   ! I'm on a person
+        if (NP0:index != NO1:owner) then                            ! Person isn't my owner
+          if (NP0:righthand = NO1) then                             ! If I'm in your hands, clear it
+            clear NP0:righthand
+          else
+            clear NP0:lefthand
+          .
+          clear NO1:worn                                            ! Rat runs away!
+          move NO1 ground NR0                                       ! To the ground with you!
+          msgp "The $O1S squeals and jerks until you place it on the ground."
+          ifnot (NP0:invisible | NP0:nonexist | NP0:hidden) then
+            msgrxp "The $O1S squeals and jerks in $P1's hands until $P0H places it on the ground."
+          .
+        .
+      .
+      if NO2 then ! I'm in a container, event, or critter
+        rootexistof NO1 for NP0
+        if (NP0:index != NO1:owner) then  ! I'm in a container that doesn't belong to my owner.
+          whereat NO1 for A9
+          when A9
+            is 2
+              set S9 to "inside"
+            .
+            is 3
+              set S9 to "on top of"
+            .
+            is 4
+              set S9 to "behind"
+            .
+            is 5
+              set S9 to "beneath"
+            .
+            default
+              set S9 to "nearby"
+            .
+          .
+          msgr "The faint rustle can be heard as $O1D makes its abrupt appearance from $S9 $O2D."
+          move NO1 ground NR0
+          clear NO1:worn
+        .
+      .
+      where NP1 for NR9  ! Where is my owner?
+      ifnot (NR9 = NR0) then
+        msg NR0 "$+$O1D trots off."
+        move NO1 ground NR9
+        set NO1:lockseg to 1
+        msg NR9 "$+$O1D trots into the room."
+        stop
+      .  
+      test2effect NO1 code $THISSCRIPT value2 1                   ! Make sure I have my ambient effect on
+      if $ERROR then                                              ! No ambients
+        callmatch must_match "$START_EFFECT" in $THISSCRIPT       ! restart effects
+      .
+    else_if (V2 = 1) then                                           ! Random Action Section
+      test2effect NO1 code $THISSCRIPT value2 1                      ! Check for more extraneous actions
+      loop ($ERROR = 0)                                             ! While there are
+        rem2effect code $THISSCRIPT value2 1 from NO1                ! remove them
+        test2effect NO1 code $THISSCRIPT value2 1                    ! Check again
+      .
+      where NO1 for NP0                                             ! Where am I?
+      where NO1 for NO2
+      if NO2 then  ! I'm in a container
+        addeffect code $THISSCRIPT value1 0 value2 1 flags 0 with NO1 in NO1:data10 script $THISSCRIPT
+        rootexistof NO1 for NP0
+        if (NP0:index != NO1:owner) then
+          stop
+        .
+        random 1 to 3 for A9
+        when A9
+          is 1
+            set T1 to "Your $O2S shifts and rustles a bit, the sounds of soft snorts followed by snoring"
+            set T1 to (T1+ " emanating from it.")
+            set T2 to "$'$P0 $O2S shifts and rustles a bit, the sounds of soft snorts followed by snoring"
+            set T2 to (T2+ " emanating from it.")
+          .
+          is 2
+            ifnot NO2:closed then
+              set T1 to "$+$O1D suddenly peeks its head out from your $O2S, snuffling towards your hands briefly,"
+              set T1 to (T1 + " before ducking back inside.")
+              set T2 to "$+$O1D suddenly peeks its head out from $'$P0 $O2S, snuffling towards $P0H hands briefly,"
+              set T2 to (T2 + " before ducking back inside.")
+            else
+              set T1 to "The sound of distressed oinking and squealing can be heard plainly from your $O2S."
+              set T2 to "The sound of distressed oinking and squealing seem to be emitting from $P0's $O2S."          
+            .
+          .
+          default
+            stop        
+          .
+        .    
+        if ((T1 != "") & (T2 != "")) then
+          callmatch must_match "$PUSH_NP9_ATMOSPHERICS" in 2442
+          msgp T1
+          ifnot (NP0:hidden | NP0:invisible | NP0:nonexist) then
+            msgrxp T2
+          .
+          callmatch must_match "$POP_NP9_ATMOSPHERICS" in 2442
+        .
+        stop
+      .
+      addeffect code $THISSCRIPT value1 0 value2 1 flags 0 with NO1 in NO1:data1 script $THISSCRIPT
+      random 1 to 10 for A9
+      callmatch must_match "$PUSH_NP9_ATMOSPHERICS" in 2442
+      if (nr0:inside) then
+        set T9 to "floor"
+      else
+        set T9 to "ground"
+      .
+      when A9
+        is 1
+          callmatch must_match "$RANDOM_PERSON" in 15386
+          if NP9 then
+            set NP0 to NP9
+            msgp "$+$O1D trots around you, excitedly stamping its hooves against the $T9."
+            msgrxp "$+$O1D trots around $P0, excitedly stamping its hooves against the $T9."
+          .
+        .
+        is 2
+          msgr "$+$O1D snuffles about the area, looking for something to eat."
+        .
+        is 3
+          callmatch must_match "$RANDOM_PERSON" in 15386
+          if NP9 then
+            set NP0 to NP9
+            msgr "Out of nowhere, $O1S squeals and darts around for several moments before calming back down$\"
+            msgr " when it sees a small morsel of what might be food."        
+          .
+        .
+        is 4                
+          msgr "$+$O1D grunts contentedly and rolls back and forth on the ground."
+        .
+        is 5      
+          msgr "$+$O1D seems to notice that the floppy end of one of its ears has flipped backward, shaking$\"
+          msgr " its head in agitation until it's righted once more!"
+        .
+        is 6
+          callmatch must_match "$RANDOM_PERSON" in 15386
+          if NP9 then
+            set NP0 to NP9
+            msgp "$+$O1D stares at you intently for a moment as if trying to figure out how to make a meal of you,$\"
+            msgp " then flops to the ground with a dejected-sounding grunt."
+            msgrxp "$+$O1D stares at $P0 intently for a moment as if trying to figure out how to make a meal of$\"
+            msgrxp " $P0I, then flops to the ground with a dejected-sounding grunt."
+          .
+        .
+        is 7
+          msgr "The $O1S finds a random scrap of trash on the $S9 and proceeds to chew it into an unidentifiable$\"
+          msgr " mess of shredded fragments."
+        .
+        is 8
+          msgr "$+$O1D oinks loudly!"
+        .
+        is 9
+          msgr "$+$O1D lazily closes its eyes and lets out a series of soft oink-snorts before tumbling over and$\"
+          msgr " awakening with a start!"
+        .
+        is 10
+          msgr "With remarkably dainty execution, $O1D prances about the area, its head held high and its curly$\"
+          msgr " little tail flicking with self-statisfaction!"
+        .
+        is 11
+          callmatch must_match "$RANDOM_PERSON" in 15386
+          if NP9 then
+            set NP0 to NP9
+            msgp "$+$O1D plops down tiredly and rolls its eyes toward you before squealing piteously."
+            msgrxp "$+$O1D plops down tiredly and rolls its eyes toward $P0 before squealing piteously."
+          .
+        .
+        is 12
+          msgr "Leaping around happily, $O1D stirs up dust in the area.  Realizing how filthy its become,$\"
+          msgr " it gives a brief, irritated squeal."
+        .
+        is 13
+          callmatch must_match "$RANDOM_PERSON" in 15386
+          if NP9 then
+            set NP0 to NP9
+            msgp "$+$O1D oinks at you and stamps a hoof, as if demanding attention."
+            msgrxp "$+$O1D oinks at $P9 and stamps a hoof, as if demanding attention."
+          .
+        .
+        is 14
+          set np0 to no1:Owner
+          if NP0 then
+            msgp "$+$O1D wanders around, snout to the ground, as if looking for something.  Looking up,$\"
+            msgp " it realizes how far it has strayed and suddenly squeals before bolting back to you."
+            msgrxp "$+$O1D wanders around, snout to the ground, as if looking for something.  Looking up,$\"
+            msgrxp " it realizes how far it has strayed and suddenly squeals before bolting back to $P0."
+          .
+        .
+        default      
+          msgr "$O1D wanders around, and seemingly finding a warm spot, flops onto its side and proceeds$\"
+          msgr " to sunbathe.  After a while, it gets up again."
+        .
+      .
+      callmatch must_match "$POP_NP9_ATMOSPHERICS" in 2442
+    .
+  .
+  is 12328001 ! Trick cooldown
+    if (V1 = 1) then
+      set T8 to "play dead"
+    else_if (V1 = 2) then
+      set T8 to "roll"
+    else_if (V1 = 3) then
+      set T8 to "dance"
+    else_if (V1 = 4) then
+      set T8 to "hunt"
+    else
+      set T8 to "kick"
+    .
+    set T9 to "You think your $O1N might be willing to perform the $T8 trick again now."
+    expand T9
+    msgp T9
+  .
+  is 1232002 ! Rub Confirmation
+  .
+.
+!-----------
+: "look"
+!-----------
+  set $BREAK to 1
+  when V1
+    is 2              ! Look IN
+      msgp "That's a bit macabre."
+    .
+    is 3              ! Look ON      
+      callmatch must_match "$POST_LOOK" in $THISSCRIPt
+    .
+    is 4              ! Look BEHIND
+      msgp "You see an adorable, curling tail."
+    .
+    is 5              ! Look UNDER
+      msgp "The $O1N squeals irritatedly at you."
+    .
+    default           ! Let default look handle plain LOOK
+      if (no1:examine) then
+        msgp "$O1:examine"
+      .
+      callmatch must_match "$POST_LOOK" in $thisscript
+    .
+  .
+.
+!-----------
+: "$POST_LOOK"
+!-----------
+  callmatch must_match "$CHECK_BUILD" in $THISSCRIPT
+  gather firstobj NO1 for NO9 sametype
+  clear T1 ! Wearing
+  clear T2 ! Holding
+  set V1 to 1
+  loop NO9
+    set NO8 to NO9
+    gather nextobj NO9 for NO9 sametype
+    ifnot (NO8:hidden = 1) then
+      ifnot NO9 then ! Last Item
+        if V1 then  ! First item
+          if (no9:worn) then
+            set T1 to "$O8D."            
+          else
+            set T2 to "$O8D."
+          .
+          clear V1
+        else ! Not the first item
+          if (no8:worn) then
+            set T1 to (T1 + ", and $O8D.")
+          else
+            set T2 to (T2 + ", and $O8D.")
+          .
+        .
+      else
+        if V1 then ! It was the first item
+          if (no8:worn) then
+            set T1 to "$O8D"                                  
+          else
+            set T2 to "$O8D"
+          .
+          clear V1                                   
+        else ! Just a regular item in the list
+          if (no8:worn) then
+            set T1 to (T1 + ", and $O8D.")
+          else
+            set T2 to (T2 + ", and $O8D.")
+          .
+        .
+      .
+    .
+  .
+  if T1 then
+    msgp ("$+$P1D is currently wearing " + T1)         
+  else
+    msgp "It isn't carrying wearing anything special."
+  .
+  if T2 then
+    msgp ("$+$O1D is currently carrying " + T2)         
+  else
+    msgp "It isn't carrying anything special."
+  .
+  set $BREAK to 1
+.
+!-----------------
+: "$DROP"
+!-----------------
+  msgrgm NR0 mode 0 "[s12328 Piglet Pet] NO1 is $O1N, NO2 is $O2N."   
+.  
+!-----------------
+: "put"
+!-----------------
+  if (no1:script<>$thisscript) then
+    stop
+  .
+  ifnot (no2) then
+    stop
+  .
+  fastpush
+    callmatch must_match "$START_EFFECT" in $THISSCRIPT       ! Make sure our effects are normal
+  fastpop
+  if (no2 IsNotOfType "container") then
+    msgp "$+$P1S glances at $O2N and squeals irritatedly at you."
+    set $break to 1
+    stop
+  .
+  if (no2:closed) then
+    msgp "The $O2S is closed!"
+    set $break to 1
+    stop
+  .
+  if (NO2:script=12327) then ! piglet sack
+    clear $break
+    stop
+  .
+  if ((no2:in_max_vl > 0)&(no2:in_max_wt>0)&(no2:script=0)) then
+    msgp "You stuff the $O1S into $O2D."   
+    msgrxp "$P0 stuffs $O1D into $O2D."
+    if (np0:righthand=no1) then
+      clear np0:righthand
+    else_if (np0:lefthand=no1) then
+      clear np0:lefthand
+    .
+    move no1 in no2
+    set $break to 1
+  .
+.
+!-----------------
+: "$PUT2"
+!-----------------
+.
+!-----------------
+: "drop"
+!-----------------
+! Putting the piglet on the ground
+!- - - - -
+  if (no1:script<>$thisscript) then
+    stop
+  .
+  ifnot ((np0:righthand=no1)|(np0:lefthand=no1)) then
+    stop
+  .
+  set T9 to "You set the $O1S on the ground.  It trots around you in a circle, happily oinking."
+  msgp t9
+  if (np0:righthand=no1) then
+    clear np0:righthand
+  else
+    clear np0:lefthand
+  .
+  move no1 ground nr0
+  set no1:protected to 1
+  set T8 to "$P0 sets $O1D on the ground. It trots around $P0I in a circle, happily oinking."
+  msgrxp t8
+  fastpush
+    callmatch must_match "$START_EFFECT" in $THISSCRIPT       ! Make sure our effects are normal
+  fastpop
+  set $break to 1
+.
+!-----------------
+: "$GET2"
+!-----------------
+  stop  !Can't do this in DR
+  callmatch must_match "$CHECK_BUILD" in $THISSCRIPT         ! Check NO1's groups and flags
+  callmatch must_match "$START_EFFECT" in $THISSCRIPT       ! Make sure our effects are normal
+  callmatch must_match "$UNHIDE" in 340  ! break hiding
+  if (no1:worn) then
+    set T9 to "on the $O2N"
+  else
+    set T9 to "in the $O2N's mouth"
+  .
+  expand T9
+  msgp "You reach for the $O1S $T9 and carefully remove it."
+  msgrxp "$P0 reaches for the $O1S $T9 and carefully removes it.  The $O2N gives a long-suffering look at $P0."
+  set $BREAK to 1
+.
+!-----------------
+: "take"
+!-----------------
+  callmatch must_match "get" in $thisscript
+.
+!-----------------
+: "get"
+!-----------------
+  callmatch must_match "$CHECK_BUILD" in $THISSCRIPT
+  callmatch must_match "$START_EFFECT" in $THISSCRIPT
+  if NO2 then ! Pet is in something
+    if (NO2:script = 12327) then ! pet sack
+      stop
+    .
+  .
+  where NO1 for NP1
+  if NP1 then
+    stop
+  .
+  set $BREAK to 1
+  ifnot ((NP0:righthand = 0) | (NP0:lefthand = 0)) then
+    msgp "You need a free hand to pick that up."
+    stop
+  .
+  set $ERROR to 1
+  if (NP0:righthand = 0) then
+    isinjured NP0 area 7 for V9
+    isinjured NP0 area 3 for V8
+    if ((V9 < 55) & (V8 < 55)) then
+      clear $ERROR
+    .
+  .
+  if $ERROR then
+    if (NP0:lefthand = 0) then
+      isinjured NP0 area 8 for V7
+      isinjured NP0 area 4 for V6
+      if ((V7 < 55) & (V6 < 55)) then
+        clear $ERROR
+      .
+    .
+  .
+  if $ERROR then
+    msgp "You seem to be lacking sufficient limbs to be attempting that."
+    stop
+  .
+  ifnot (NO1:owner) then
+    set NO1:owner to NP0:index
+  .
+  if (NO1:owner = NP0:index) then
+    clear NO1:worn
+    move NO1 inventory NP0
+    ifnot NP0:righthand then
+      set NP0:righthand to NO1
+    else
+      set NP0:lefthand to NO1
+    .
+    clear no1:protected
+    msgp "You scoop the $O1S up."
+    msgrxp "$P0 scoops $O1D up into $P0H arms."
+  else
+    msgp "$+$O1D squeals and squirms out of your reach."
+    msgrxp "$P0 reaches for $O1D, but the $O1N squeals and squirms out of $P0H reach."
+    stop
+  .
+.
+!-----------------
+: "$CHECK_BEFRIEND"
+!-----------------
+! Expects NP1 as the target
+! Expects NP0 to be the owner
+! Returns A9 as warmth level towards NP1
+!
+  fastpush
+    set A8 to NP1:index
+    info table NP0:Befriend
+    if (V1==1) then ! No friends
+      clear A9
+    else
+      set A1 to 1
+      loop (A1 < V1)
+        if (A8 = NP0:Befriend[A1,0,0]) then
+          set A9 to NP0:Befriend[A1,1,0]
+          set A1 to V1
+        else
+          set A1 to (A1 + 1)
+        .
+      .
+    .
+    set B9 to A9
+  fastpop
+  set A9 to B9
+.
+!-----------------
+: "$START_EFFECT"
+!-----------------
+  where NO1 for NO2                                 ! Where's the pig
+  if (NO2:script = 12327) then                      ! In a sack
+    stop                                            ! No effects in the sack, kthxbai
+  .
+  test2effect NO1 code $THISSCRIPT value2 0         ! Am I moving around?
+  if $ERROR then                                    ! Nope, add on movement effect
+    addeffect code $THISSCRIPT value1 0 value2 0 flags 0 with NO1 in 10 script $THISSCRIPT
+  .
+  set A9 to 1                                       ! start my iterator
+  clear A8                                          ! clear my counter
+  loop (A9 < 10)  ! Check all possible states.      ! go through all possible states
+    test2effect NO1 code $THISSCRIPT value2 A9      ! Is this effect on?
+    ifnot $ERROR then                               ! Yes!
+      set A8 to (A8 + 1)                            ! Count my effects
+    .
+    set A9 to (A9 + 1)                              ! Iterate
+  .
+  ifnot A8 then                                     ! No states found at all, so put on random action        
+    addeffect code $THISSCRIPT value1 0 value2 1 flags 0 with NO1 in 10 script $THISSCRIPT
+  else                                              ! does have a current state  
+    test2effect NO1 code $THISSCRIPT value2 1       ! Is it the default one? Random ambients?
+    loop ($ERROR = 0)                               ! Yes, it is
+      rem2effect code $THISSCRIPT value2 1 from NO1 ! Remove all the existing ones and replace with one
+      test2effect NO1 code $THISSCRIPT value2 1     ! Extended timeout to prevent messaging while being
+    .
+    addeffect code $THISSCRIPT value1 0 value2 1 flags 0 with NO1 in NO1:data1 script $THISSCRIPT  ! played with.
+  .
+.
+!-----------------
+! Verb Section
+!-----------------
+!-----------------
+: "touch"
+!-----------------
+  if (no1:script <> $THISSCRIPT) then
+    stop
+  .
+  set $BREAK to 1
+  ifnot (np0:hidden|np0:nonexist|np0:invisible) then
+    msgp "That would reveal you!"
+    stop
+  else
+    msgp "You give $O1D a friendly pet between its ears.  It squeals happily and nuzzles your hand in return."
+    msgrxp "$P0 gives $O1D a friendly pet between its ears.  It squeals happily and nuzzles $P0H hand in return."
+  .
+.
+!-----------------
+: "pet"
+!-----------------
+  callmatch must_match "touch" in $THISSCRIPT
+  set $BREAK to 1
+.
+!-----------------
+: "snuggle"
+!-----------------
+  if (no1:script <> $THISSCRIPT) then
+    stop
+  .
+  set $BREAK to 1
+  ifnot (np0:hidden|np0:nonexist|np0:invisible) then
+    msgp "That would reveal you!"
+  else
+    ifnot ((np0:lefthand = no1) || (np0:righthand = no1)) then
+      msgp "Scooping $O1D into your arms, you snuggle it close.  It flails briefly at the sudden$\"
+      msgp " gravity shift but settles down before you return it to the ground."
+    else
+      msgp "You snuggle $O1D in your arms.  It oinks happily at you."
+      msgrxp "$P0 snuggles $O1D in $P0H arms.  It oinks happily at $P0I."
+    .
+  .
+.
+!-----------------
+: "poke"
+!-----------------
+  if (no1:script <> $THISSCRIPT) then
+    stop
+  .
+  set $BREAK to 1
+  ifnot (np0:hidden|np0:nonexist|np0:invisible) then
+    msgp "That would reveal you!"
+  else
+    msgp "You give $O1D a playful poke in its gut.  It squeals loudly at you and runs around in looping circles."
+    msgrxp "$P0 gives $O1D a playful poke in its gut.  It squeals loudly at $P0I and runs around in looping circles."
+  .
+.
+!-----------------
+: "kiss"
+!-----------------
+  if (no1:script <> $THISSCRIPT) then
+    stop
+  .
+  if (no1:data1 < 2) then
+    stop
+  .
+  set $BREAK to 1
+  ifnot (np0:hidden|np0:nonexist|np0:invisible) then
+    msgp "That would reveal you!"
+  else
+    ifnot ((np0:lefthand = no1) || (np0:righthand = no1)) then
+      msgp "You plant a kiss onto the $O1N's head.  It oinks happily at you."
+      msgrxp "$P0 plants a kiss onto the $O1N's head.  It oinks happily in return.."
+    else
+      msgp "You blow a kiss at the $O1N.  It leaps towards you, squealing excitedly and stamping its$\"
+      msgp " small hooves as if demanding to be picked up."
+      msgrxp "$P0 blows a kiss at t he $O1N.  It leaps towards $P0I, squealing excitedly and stamping$\"
+      msgrxp " its small hooves as if demanding to be picked up."
+    .
+  .
+.
+!-----------------
+: "smooch"
+!-----------------
+  callmatch must_match "kiss" in $THISSCRIPT
+  set $BREAK to 1
+.
+!-----------------
+: "nudge"
+!-----------------
+  if (no1:script <> $THISSCRIPT) then
+    stop
+  .
+  if (no1:data1 < 2) then
+    stop
+  .
+  set $BREAK to 1
+  ifnot (np0:hidden|np0:nonexist|np0:invisible) then
+    msgp "That would reveal you!"
+  else
+    ifnot ((np0:lefthand = no1) || (np0:righthand = no1)) then
+      msgp "You give your $O1N a playful nudge, lightly tickling it and causing it to squirm about in your arms."
+      msgrxp "$P0 gives $P0H $O1N a playful nudge, lightly tickling it and causing it to squirm about in $P0H arms."
+    else
+      msgp "You edge closer to $O1D.  It eyes you suspiciously briefly."
+      msgrxp "$P0 edges closer to $O1D.  It eyes $P0I suspiciously briefly."
+    .
+  .
+.
+!-----------------
+: "kick"
+!-----------------
+  if (no1:script <> $THISSCRIPT) then
+    stop
+  .
+  if (no1:data1 < 2) then
+    stop
+  .
+  set $BREAK to 1
+  ifnot (np0:hidden|np0:nonexist|np0:invisible) then
+    msgp "That would reveal you!"
+  else
+    ifnot ((np0:lefthand = no1) || (np0:righthand = no1)) then
+      if ((np0:prone = 0) && (np0:sitting = 0)) then ! standing
+        msgp "You pull your leg back as if to kick $O1D, and noticing your movement, it suddenly darts$\"
+        msgp " out of the way and tackles your lifted leg, sending you sprawling to the ground.  It trots$\"
+        msgp " up to your face and oinks loudly at you."
+        msgrxp "$P0 pulls $P0H leg back as if to kick $O1D, and noticing $P0H movement, it suddenly darts$\"
+        msgrxp " out of the way and tackles $P0H lifted leg, sending $P0I sprawling to the ground.  It trots$\"
+        msgrxp " up to $P0H face and oinks loudly."
+      else
+        msgp "You should probably be standing, first."
+      .
+    else
+      if ((np0:prone = 0) && (np0:sitting = 0)) then
+        msgp "You hold the $O1N out and prepare to drop-kick it.  It suddenly squirms and bites down$\"
+        msgp " hard on your hand!"
+        msgrxp "$P0 holds the $O1N out and prepares to drop-kick it.  It suddenly squirms and bites $P0I on the hand!"
+      else
+      .
+    .
+  .
+.
+!-----------------
+: "tickle"
+!-----------------
+  if (no1:script <> $THISSCRIPT) then
+    stop
+  .
+  if (no1:data1 < 3) then
+    stop
+  .
+  set $BREAK to 1
+  ifnot (np0:hidden|np0:nonexist|np0:invisible) then
+    msgp "That would reveal you!"
+  else
+    ifnot ((np0:lefthand = no1) || (np0:righthand = no1)) then
+      msgp "Lightly, you tickle the $O1N's sides, making it squeal excitedly and squirm in your arms."
+      msgrxp "$P0 lightly tickles $O1D's sides, making it squeal excitedly and squirm in your arms."
+    else
+      msgp "Lightly, you tickle the $O1N's sides, making it squeal excitedly and run around in circles."
+      msgrxp "$P0 lightly tickles $O1D's sides, making it squeeal excitedly and run around in circles."
+    .
+  .
+.
+!-----------------
+: "pinch"
+!-----------------
+  if (no1:script <> $THISSCRIPT) then
+    stop
+  .
+  if (no1:data1 < 3) then
+    stop
+  .
+  set $BREAK to 1
+  ifnot (np0:hidden|np0:nonexist|np0:invisible) then
+    msgp "That would reveal you!"
+  else
+    msgp "You reach down and lightly pinch the $O1N's side, as if checking to see how fat it is."
+    msgrxp "$P0 reaches down and lightly pinches the $O1N's side, as if checking to see how fat it is."
+  .
+.
+!-----------------
+: "prod"
+!-----------------
+  if (no1:script <> $THISSCRIPT) then
+    stop
+  .
+  if (no1:data1 < 3) then
+    stop
+  .
+  set $BREAK to 1
+  ifnot (np0:hidden|np0:nonexist|np0:invisible) then
+    msgp "That would reveal you!"
+  else
+    msgp "You give $O1D a light prod on its snout and quietly say, $QBoop.$Q"
+    msgrxp "$P0 gives $O1D a light prod on its snout and quetly says, $QBoop.$Q."
+  .
+.
+!-----------------
+: "punch"
+!-----------------
+  if (no1:script <> $THISSCRIPT) then
+    stop
+  .
+  if (no1:data1 < 4) then
+    stop
+  .
+  set $BREAK to 1
+  ifnot (np0:hidden|np0:nonexist|np0:invisible) then
+    msgp "That would reveal you!"
+  else
+    msgp "Forming a fist, you lightly bump your closed hand against the $O1N's forehead.  It oinks at you."
+    msgrxp "Making a fist, $P0 lightly bumps $P0H closed hand against the $O1N's forehead.  It oinks in return."
+  .
+.
+!-----------------
+: "tilt"
+!-----------------
+  if (no1:script <> $THISSCRIPT) then
+    stop
+  .
+  if (no1:data1 < 4) then
+    stop
+  .
+  set $BREAK to 1
+  ifnot (np0:hidden|np0:nonexist|np0:invisible) then
+    msgp "That would reveal you!"
+  else
+    msgp "You tilt your head at the $O1N.  It mimics you and then oinks playfully at you."
+    msgrxp "$P0 tilts $P0H head at the $O1N.  It oinks playfully in return."
+  .
+.
+!-----------------
+: "eat"
+!-----------------
+  if (no1:script <> $THISSCRIPT) then
+    stop
+  .
+  if (no1:data1 < 4) then
+    stop
+  .
+  set $BREAK to 1
+  ifnot (np0:hidden|np0:nonexist|np0:invisible) then
+    msgp "That would reveal you!"
+  else
+    msgp "You glance sharply at the $O1N and say, $QBe good or I'll eat bacon for a week.$Q  The $O1N$\"
+    msgp " hunkers down quietly, as if it understood."
+    msgrxp "$P0 glaces sharply at the $O1N and says, $QBe good or I'll eat bacon for a week.$Q  The$\"
+    msgrxp " $O1N hunkers down quietly, as if it understood."
+  .
+.
+!-----------------
+: "rub"
+!-----------------
+  if (no1:script <> $THISSCRIPT) then
+    stop
+  .
+  if (no1:data1 < 5) then
+    stop
+  .
+  set $BREAK to 1
+  ifnot (np0:hidden|np0:nonexist|np0:invisible) then
+    msgp "That would reveal you!"
+  else
+    set A0 to ($TIME + 604800)
+    if (A0 < $TIME) then
+      msgp "You give the $O1N a gently rub between the ears."
+      msgrxp "$P0 gives the $O1N a gentle rub between the ears."
+    else
+      testeffect np0 code 12328003
+      ifnot $ERROR then
+        msgp "You reach toward the $O1N, about to rub it between the ears."
+        boldon np0
+        msgp "[This action will change the adjective of $O1:adjective to something else randomy.  You may do this$\"
+        msgp " once a week.  To confirm this action, RUB $O1N again.]"
+        boldoff np0
+      else
+        msgp "You give the $O1N a gentle rub between the ears and surprisingly, the $O1N begins to change colors!"
+        msgrxp "$P0 gives the $O1N a gentle rub between the ears and surprisingly, the $O1N begins to change colors!"
+        msgp "$RBefore your eyes, the $O1:adjective $O1:noun$\"
+        callmatch must_match "$CHANGE_ADJECTIVE" in $THISSCRIPT
+        msgp " changes becomes $O1:article $O1:adjective $O1:noun."
+      .
+    .
+  .
+.
+!-----------------
+: "command"
+!-----------------
+  if (no1:script <> $THISSCRIPT) then
+    stop
+  .
+  set $BREAK to 1
+  ifnot s2 then
+    msgp "Command $O1N to do what?"
+    msgp "[STUDY $O1N to see proper syntax.]"
+    stop
+  .
+  ifnot s3 then
+    msgp "Command $O1N to do what?"
+    msgp "[STUDY $O1N to see proper syntax.]"
+    stop
+  .
+  clear A0
+  clear A1
+  scan "train^die^roll^dance^hunt^kick^get^drop" match S3 for A0
+  when A0
+    is 1 ! Train
+      callmatch must_match "$TRAIN" in $THISSCRIPT
+      stop
+    .
+    is 7 ! Die
+      set A2 to 1
+      callmatch must_match "$IS_TRAINED?" in $THISSCRIPT
+      if (A1 = 1) then
+        callmatch must_match "$DO_TRICK" in $THISSCRIPT
+      else
+        msgp "The $O1N gives you a confused look."
+        stop
+      .
+    .
+    is 11 ! Roll
+      set A2 to 2
+      callmatch must_match "$IS_TRAINED?" in $THISSCRIPT
+      if (A1 = 1) then
+        callmatch must_match "$DO_TRICK" in $THISSCRIPT
+      else
+        msgp "The $O1N gives you a confused look."
+        stop
+      .
+    .
+    is 16 ! Dance
+      set A2 to 3
+      callmatch must_match "$IS_TRAINED?" in $THISSCRIPT
+      if (A1 = 1) then
+        callmatch must_match "$DO_TRICK" in $THISSCRIPT
+      else
+        msgp "The $O1N gives you a confused look."
+        stop
+      .
+    .
+    is 21 ! Hunt
+      set A2 to 4
+      callmatch must_match "$IS_TRAINED?" in $THISSCRIPT
+      if (A1 = 1) then
+        callmatch must_match "$DO_TRICK" in $THISSCRIPT
+      else
+        msgp "The $O1N gives you a confused look."
+        stop
+      .
+    .
+    is 27 ! Kick
+      set A2 to 5
+      callmatch must_match "$IS_TRAINED?" in $THISSCRIPT
+      if (A1 = 1) then
+        callmatch must_match "$DO_TRICK" in $THISSCRIPT
+      else
+        msgp "The $O1N gives you a confused look."
+        stop
+      .
+    .
+    is 32 ! get
+      if (no1:data1 <> 5) then
+        msgp "The $O1N gives you a confused look and ignores you."
+        stop
+      .
+      callmatch must_match "$IS_TRAINED?" in $THISSCRIPT
+      if (A1 = 1) then
+        callmatch must_match "$DO_TRICK" in $THISSCRIPT
+      else
+        msgp "The $O1N gives you a confused look."
+        stop
+      .
+    .
+    is 36 ! drop
+      if (no1:data1 <> 5) then
+        msgp "The $O1N gives you a confused look and ignores you."
+        stop
+      .
+      callmatch must_match "$IS_TRAINED?" in $THISSCRIPT
+      if (A1 = 1) then
+        callmatch must_match "$DO_TRICK" in $THISSCRIPT
+      else
+        msgp "The $O1N gives you a confused look."
+        stop
+      .
+    .
+  .
+.
+!-----------------
+: "$IS_TRAINED?"
+!-----------------
+.
+!-----------------
+: "$TRAIN"
+!-----------------
+.
+!-----------------
+: "$DO_TRICK"
+!-----------------
+.
+!-----------------
+: "$CHANGE_ADJECTIVE"
+!-----------------
+  clear A0
+  clear A1
+  if ((no1:noun = "piglet") || (no1:noun = "pig")) then
+    set A0 to 1
+  .
+  info table 2864
+  random 1 to V1 for A2
+  gettable 2864 at A0 A2 0 for T9
+  if (T9 <> "") then
+    set no1:adjective to T9
+  else ! Something went wrong.
+    callmatch must_match "$CHANGE_ADJECTIVE" in $THISSCRIPT
+  .
+.
+!-----------------
+: "$DISALLOW"
+!-----------------
+  if (no2:script = $THISSCRIPT) then
+    msgp "What did the $O2S ever do to you?"
+  else
+    msgp "What did the $O1S ever do to you?"
+  .
+.
+!-----------------
+: "$POUR2"
+!-----------------
+  callmatch must_match "$DISALLOW" in $THISSCRIPT
+  set $BREAK to 1
+  stop
+.
+!-----------------
+: "pound"
+!-----------------
+  callmatch must_match "$DISALLOW" in $THISSCRIPT
+  set $BREAK to 1
+  stop
+.
+!-----------------
+: "attack"
+!-----------------
+  callmatch must_match "$DISALLOW" in $THISSCRIPT
+  set $BREAK to 1
+  stop
+.
+!-----------------
+: "knock"
+!-----------------
+  callmatch must_match "$DISALLOW" in $THISSCRIPT
+  set $BREAK to 1
+  stop
+.
+!-----------------
+: "ambush"
+!-----------------
+  callmatch must_match "$DISALLOW" in $THISSCRIPT
+  set $BREAK to 1
+  stop
+.
+!-----------------
+: "bounce"
+!-----------------
+  callmatch must_match "$DISALLOW" in $THISSCRIPT
+  set $BREAK to 1
+  stop
+.
+!-----------------
+: "$RANDOM_PERSON"
+!-----------------
+  where NO1 for NP0
+  where NO1 for NO5                                   
+  clear NP9
+  if ((NP0:index != 0) | (NO5 != 0)) then           ! I'm on a person or a sack, no random people here.
+    clear NP9
+  else
+    gather firstplayer NR0 for NP8 exist              ! start looking at people
+    clear A8                                          ! Initialize my people-counter
+    loop NP8                                          ! While there are people
+      ifnot (NP8:hidden | NP8:invisible | NP8:nonexist) then      ! Not hidden?
+        set A8 to (A8 + 1)                            ! Count them
+      .
+      gather nextplayer NP8 for NP8 exist             ! Get next person
+    .
+    if A8 then                                        ! At least one visible player
+      random 1 to A8 for A9                             ! Pick a random person
+      clear A8                                          ! re-clear my counter
+      gather firstplayer NR0 for NP8 exist              ! Start looking through people again
+      loop NP8                                          ! While I see people
+        ifnot (NP8:hidden | NP8:invisible | NP8:nonexist) then    ! Not hiding
+          set A8 to (A8 + 1)                            ! Increment my counter
+          if (A8 = A9) then                             ! You match my random number!
+            set NP9 to NP8                              ! Select you
+          .
+        .
+        ifnot NP9 then                                  ! No target  chosen yet
+          gather nextplayer NP8 for NP8 exist           ! Pick another person
+        else                                            ! I did pick one!
+          clear NP8                                     ! Stop my loop
+        .
+      .
+    .
+  .
+.
+!-----------------
+: "$CHECK_BUILD"
+!-----------------
+  ifnot (NO1 isoftype "datastore") then
+    addgroup "datastore" to NO1
+    set NO1:data10 to 100 ! Idle rate
+  .
+  set NO1:nocleanup to 1
+  set NO1:nodrag to 1
+  set NO1:pawn_code to 13
+  set NO1:generic to 1
+.
+!-----------------
+: "$EFFECT_NAME"
+!-----------------
+  when V0
+    is 12328000
+      set T9 to "Piglet Heartbeat"
+    .
+    is 12328001
+      set T9 to "Piglet Trick Cooldown"
+    .
+    is 12328002
+      set T9 to "Piglet Atmospherics on"
+    .
+    is 12328003
+      set T9 to "Piglet Adjective Change Confirm"
+    .
+  .
+.
+!-----------------
+: "$ANALYZE_UPGRADE_INFO"
+!-----------------
+  msgp "$+$O1D is not compatible with potency crystals, however..."
+  msgp "$RYou could probably get $O1D groomed by a special groomer, but groomers are not miracle workers."  
+  msgp "It will likely still look dirty or$\"
+  msgp " grimy, and would probably bite off your hand if you tried putting silly hats or bows on it."
+  msgp ""
+  msgp "You could probably get it to be less loud by THUMPing it, or you could make it more excited by POKEing it."
+  msgp "If you find the $O1S is becoming too annoying, confine it to a designated rat sack."
+. 
+!-----------------
+: "$CHECK"
+!-----------------
+  callmatch must_match "$CHECK_BUILD" in $THISSCRIPT        ! Make sure I'm built right.
+  set V1 to $THISSCRIPT
+  msgp "s$V1 - A Pet Piglet - This script is to go on an extended dataprop that is a piglet."  
+  msgp "Available verbs are look, command, train, clean, put, remove, get, pet, touch$\"  
+  msgp " snuggle, poke, kick, kiss/smooch, nudge, tickle, punch, prod, tilt, eat, rub."
+  msgp ""
+  msgp "Piglets may be altered, but should remain a synonym such as boar, pig, peccary."  
+  msgp "MUST remain realistic looking.   Silly clothing and collars allowed."  
+  msgp "Bond but are transferrable in their sack.  New owners should get them out immediately on transfer."
+  msgp "SETUP:"
+  msgp " Owner - Owner's index."
+  msgp "   DATA1 - Tier (1-5)"
+  msgp "   DATA2 - Trick slots allow"
+  msgp "   DATA3 - Trick slots used"
+  msgp "   DATA4 - Tricks learned [1,2,3,4,5]" 
+  msgp "   DATA5 - Current trick being trained - Can only train one at a time."
+  msgp "   DATA6 - Number of times training has been done.  (0-10)"
+  msgp "   DATA7 - Number of items being worn. (0-3)"
+  msgp "   DATA8 - Number of items being carried (0-1)"
+  msgp "   DATA9 - Timestamp of last RUB. (1wk cooldown)"
+  msgp "   DATA10 - Idle rate"
+  msgp "   STRDATA1 - Custom Trick word"
+  msgp "   STRDATA2 - Custom Trick MSGP"
+  msgp "   STRData3 - Custom Trick MSGRXP"
+  msgp ""
+  msgp "Effects:"
+  msgp " 12328000 - Heartbeat effect used for atmospherics and checks."
+  msgp "            V1 = 0-Not on Ground  1-On Ground"
+  msgp " 12328001 - Trick cooldowns."
+  msgp "            V1 = 1-DIE  2-ROLL  3-DANCE  4-HUNT  5-KICK"
+  msgp " 12328002 - Atmospheric toggle."
+  msgp "            V1 = 0-OFF  1=ON"
+  msgp " 12328003 - Confirmation for RUB"
+  msgp ""      
+  set NP9 to NP0
+  callmatch must_match "$FIND_SACK" in 15386
+  set NP1 to NP0
+  set NP0 to NP9
+  ifnot NP1 then
+    msgp "WARNING, the piglet's owner is not around."
+    stop
+  .
+  ifnot NO2 then
+    msgp "WARNING, $'$O1D owner, $P1, doesn't currently have a piglet sack.  Please verify that they have one."
+    msgp "Replacement cstring: /CE 403;$Qa soft,woven,sack$Q addgroup=$Qdatastore$Q script=12327 wear_at=13$\"
+    msgp " pawn_code=13"
+  else
+    msgp "The $O1N is currently assigned to $O2D as its piglet sack, which is in $'$P1 inventory."
+  .
+  msgp ""
+.
